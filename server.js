@@ -5,43 +5,22 @@ import cors from "cors";
 import session from "express-session";
 
 const app = express();
-app.set("trust proxy", 1); // Required for Render HTTPS
-
-/* ============================= */
-/* 🔧 MIDDLEWARE                 */
-/* ============================= */
-
 app.use(bodyParser.json());
-
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
+app.use(cors());
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || "crm_secret_2026",
+  secret: "crm_secret_2026",
   resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: true,        // Render = HTTPS
-    httpOnly: true,
-    sameSite: "none"
-  }
+  saveUninitialized: false
 }));
 
 const PORT = process.env.PORT || 3000;
 
-/* ============================= */
-/* 🔐 ENV VARIABLES              */
-/* ============================= */
-
+/* 🔐 ENV VARIABLES */
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 
-/* ============================= */
 /* 📱 MULTIPLE WHATSAPP NUMBERS */
-/* ============================= */
-
 const PHONE_NUMBERS = {
   user1: "921097607763091",
   user2: "PHONE_ID_2",
@@ -50,10 +29,7 @@ const PHONE_NUMBERS = {
   user5: "PHONE_ID_5"
 };
 
-/* ============================= */
-/* 👤 LOGIN USERS                */
-/* ============================= */
-
+/* 🔐 LOGIN USERS */
 const USERS = {
   admin1: { password: "1234", phoneKey: "user1" },
   admin2: { password: "12345", phoneKey: "user2" },
@@ -62,10 +38,7 @@ const USERS = {
   admin5: { password: "12345678", phoneKey: "user5" }
 };
 
-/* ============================= */
-/* 📨 MESSAGE STORAGE            */
-/* ============================= */
-
+/* 📨 STORE MESSAGES PER NUMBER */
 let messages = {
   user1: [],
   user2: [],
@@ -77,10 +50,9 @@ let messages = {
 /* ============================= */
 /* 🔐 AUTH MIDDLEWARE            */
 /* ============================= */
-
 function requireLogin(req, res, next) {
   if (!req.session.user) {
-    return res.status(401).json({ error: "Unauthorized" });
+    return res.redirect("/login");
   }
   next();
 }
@@ -88,22 +60,20 @@ function requireLogin(req, res, next) {
 /* ============================= */
 /* 🔹 LOGIN PAGE                 */
 /* ============================= */
-
 app.get("/login", (req, res) => {
   res.send(`
   <html>
   <body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:Arial;">
-    <div style="background:#fff;padding:40px;border-radius:8px;width:300px;text-align:center;box-shadow:0 5px 15px rgba(0,0,0,0.1)">
+    <div style="background:#fff;padding:40px;border-radius:8px;width:300px;text-align:center;">
       <h2>WhatsApp CRM Login</h2>
       <input id="username" placeholder="Username" style="width:100%;padding:10px;margin-bottom:10px"/><br/>
       <input id="password" type="password" placeholder="Password" style="width:100%;padding:10px;margin-bottom:15px"/><br/>
-      <button onclick="login()" style="padding:10px 20px;background:#25D366;border:none;color:white;width:100%;border-radius:5px">Login</button>
+      <button onclick="login()" style="padding:10px 20px;background:#25D366;border:none;color:white;width:100%">Login</button>
 
       <script>
         async function login() {
           const res = await fetch('/login', {
             method:'POST',
-            credentials:'include',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
               username: document.getElementById('username').value,
@@ -127,7 +97,6 @@ app.get("/login", (req, res) => {
 /* ============================= */
 /* 🔹 LOGIN API                  */
 /* ============================= */
-
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
   const user = USERS[username];
@@ -147,36 +116,14 @@ app.post("/login", (req, res) => {
 /* ============================= */
 /* 🔹 LOGOUT                     */
 /* ============================= */
-
 app.get("/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.redirect("/login");
-  });
+  req.session.destroy();
+  res.redirect("/login");
 });
 
-// /* ============================= */
-// /* 🔹 CRM HOME                   */
-// /* ============================= */
-
-// app.get("/", (req, res) => {
-//   if (!req.session.user) {
-//     return res.redirect("/login");
-//   }
-
-//   res.send(`
-//   <html>
-//   <body style="font-family:Arial;background:#f4f6f9;padding:20px">
-//     <h2>Welcome ${req.session.user.username}</h2>
-//     <a href="/logout">Logout</a>
-//   </body>
-//   </html>
-//   `);
-// });
-
 /* ============================= */
-/* 🔹 WEBHOOK VERIFY             */
+/* 🔹 WEBHOOK VERIFICATION       */
 /* ============================= */
-
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -192,7 +139,6 @@ app.get("/webhook", (req, res) => {
 /* ============================= */
 /* 🔹 RECEIVE MESSAGES           */
 /* ============================= */
-
 app.post("/webhook", (req, res) => {
   try {
     const body = req.body;
@@ -203,6 +149,7 @@ app.post("/webhook", (req, res) => {
       const phoneId = value?.metadata?.phone_number_id;
 
       if (msg && phoneId) {
+
         const phoneKey = Object.keys(PHONE_NUMBERS)
           .find(key => PHONE_NUMBERS[key] === phoneId);
 
@@ -229,7 +176,6 @@ app.post("/webhook", (req, res) => {
 /* ============================= */
 /* 🔹 GET MESSAGES               */
 /* ============================= */
-
 app.get("/messages", requireLogin, (req, res) => {
   const phoneKey = req.session.user.phoneKey;
   res.json(messages[phoneKey] || []);
@@ -238,7 +184,6 @@ app.get("/messages", requireLogin, (req, res) => {
 /* ============================= */
 /* 🔹 SEND MESSAGE               */
 /* ============================= */
-
 app.post("/send", requireLogin, async (req, res) => {
   const { to, text } = req.body;
   const phoneKey = req.session.user.phoneKey;
@@ -280,13 +225,11 @@ app.post("/send", requireLogin, async (req, res) => {
   }
 });
 
-
 /* ============================= */
-/* 🔹 SIMPLE WEB UI              */
+/* 🔹 DASHBOARD UI (PROTECTED)   */
 /* ============================= */
-app.get("/", (req, res) => {
-  res.send(`
- <!DOCTYPE html>
+app.get("/", requireLogin, (req, res) => {
+  res.send(`<!DOCTYPE html>
 <html>
 <head>
 <title>WhatsApp CRM</title>
@@ -486,8 +429,7 @@ setInterval(loadMessages, 3000);
 </script>
 
 </body>
-</html>
-  `);
+</html>`);
 });
 
 /* ============================= */
