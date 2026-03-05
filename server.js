@@ -259,7 +259,7 @@ app.post("/send", requireLogin, async (req, res) => {
       },
       {
         headers: {
-          Authorization: \`Bearer \${ACCESS_TOKEN}\`,
+          Authorization: `Bearer ${ACCESS_TOKEN}`,
           "Content-Type": "application/json"
         }
       }
