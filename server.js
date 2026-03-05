@@ -1,12 +1,18 @@
-
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
 import cors from "cors";
+import session from "express-session";
 
 const app = express();
 app.use(bodyParser.json());
 app.use(cors());
+
+app.use(session({
+  secret: "crm_secret_2026",
+  resave: false,
+  saveUninitialized: false
+}));
 
 const PORT = process.env.PORT || 3000;
 
@@ -42,18 +48,77 @@ let messages = {
 };
 
 /* ============================= */
-/* 🔹 LOGIN ROUTE                */
+/* 🔐 AUTH MIDDLEWARE            */
+/* ============================= */
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.redirect("/login");
+  }
+  next();
+}
+
+/* ============================= */
+/* 🔹 LOGIN PAGE                 */
+/* ============================= */
+app.get("/login", (req, res) => {
+  res.send(`
+  <html>
+  <body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:Arial;">
+    <div style="background:#fff;padding:40px;border-radius:8px;width:300px;text-align:center;">
+      <h2>WhatsApp CRM Login</h2>
+      <input id="username" placeholder="Username" style="width:100%;padding:10px;margin-bottom:10px"/><br/>
+      <input id="password" type="password" placeholder="Password" style="width:100%;padding:10px;margin-bottom:15px"/><br/>
+      <button onclick="login()" style="padding:10px 20px;background:#25D366;border:none;color:white;width:100%">Login</button>
+
+      <script>
+        async function login() {
+          const res = await fetch('/login', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              username: document.getElementById('username').value,
+              password: document.getElementById('password').value
+            })
+          });
+
+          if(res.ok){
+            window.location = "/";
+          } else {
+            alert("Invalid credentials");
+          }
+        }
+      </script>
+    </div>
+  </body>
+  </html>
+  `);
+});
+
+/* ============================= */
+/* 🔹 LOGIN API                  */
 /* ============================= */
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
-
   const user = USERS[username];
 
   if (!user || user.password !== password) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
-  res.json({ success: true, phoneKey: user.phoneKey });
+  req.session.user = {
+    username,
+    phoneKey: user.phoneKey
+  };
+
+  res.json({ success: true });
+});
+
+/* ============================= */
+/* 🔹 LOGOUT                     */
+/* ============================= */
+app.get("/logout", (req, res) => {
+  req.session.destroy();
+  res.redirect("/login");
 });
 
 /* ============================= */
@@ -65,7 +130,6 @@ app.get("/webhook", (req, res) => {
   const challenge = req.query["hub.challenge"];
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("Webhook verified");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
@@ -96,8 +160,6 @@ app.post("/webhook", (req, res) => {
             type: "incoming",
             timestamp: Date.now()
           });
-
-          console.log("Message received:", msg.from);
         }
       }
 
@@ -106,7 +168,7 @@ app.post("/webhook", (req, res) => {
 
     res.sendStatus(404);
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error(err);
     res.sendStatus(500);
   }
 });
@@ -114,22 +176,22 @@ app.post("/webhook", (req, res) => {
 /* ============================= */
 /* 🔹 GET MESSAGES               */
 /* ============================= */
-app.get("/messages/:phoneKey", (req, res) => {
-  const { phoneKey } = req.params;
+app.get("/messages", requireLogin, (req, res) => {
+  const phoneKey = req.session.user.phoneKey;
   res.json(messages[phoneKey] || []);
 });
 
 /* ============================= */
 /* 🔹 SEND MESSAGE               */
 /* ============================= */
-app.post("/send", async (req, res) => {
-  const { to, text, phoneKey } = req.body;
+app.post("/send", requireLogin, async (req, res) => {
+  const { to, text } = req.body;
+  const phoneKey = req.session.user.phoneKey;
+  const phoneId = PHONE_NUMBERS[phoneKey];
 
-  if (!to || !text || !phoneKey) {
+  if (!to || !text) {
     return res.status(400).json({ error: "Missing fields" });
   }
-
-  const phoneId = PHONE_NUMBERS[phoneKey];
 
   try {
     await axios.post(
@@ -168,167 +230,207 @@ app.post("/send", async (req, res) => {
 /* ============================= */
 app.get("/", (req, res) => {
   res.send(`
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <title>WhatsApp CRM</title>
-    <style>
-      body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        display: flex;
-        height: 100vh;
-        background: #f0f2f5;
-      }
+ <!DOCTYPE html>
+<html>
+<head>
+<title>WhatsApp CRM</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
-      .sidebar {
-        width: 30%;
-        background: #ffffff;
-        border-right: 1px solid #ddd;
-        overflow-y: auto;
-      }
+<style>
+body {
+  margin:0;
+  font-family:Segoe UI, sans-serif;
+  display:flex;
+  height:100vh;
+  background:#e5ddd5;
+}
 
-      .contact {
-        padding: 15px;
-        border-bottom: 1px solid #eee;
-        cursor: pointer;
-      }
+.sidebar {
+  width:30%;
+  background:#fff;
+  border-right:1px solid #ddd;
+  display:flex;
+  flex-direction:column;
+}
 
-      .contact:hover {
-        background: #f5f5f5;
-      }
+.sidebar-header {
+  padding:15px;
+  background:#075E54;
+  color:white;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
 
-      .chat {
-        width: 70%;
-        display: flex;
-        flex-direction: column;
-      }
+.contacts {
+  flex:1;
+  overflow-y:auto;
+}
 
-      .chat-header {
-        padding: 15px;
-        background: #075E54;
-        color: white;
-        font-weight: bold;
-      }
+.contact {
+  padding:15px;
+  border-bottom:1px solid #f1f1f1;
+  cursor:pointer;
+}
 
-      .messages {
-        flex: 1;
-        padding: 15px;
-        overflow-y: auto;
-      }
+.contact:hover {
+  background:#f5f5f5;
+}
 
-      .message {
-        margin-bottom: 10px;
-        padding: 10px;
-        border-radius: 8px;
-        max-width: 60%;
-      }
+.chat {
+  width:70%;
+  display:flex;
+  flex-direction:column;
+}
 
-      .incoming {
-        background: #ffffff;
-      }
+.chat-header {
+  padding:15px;
+  background:#075E54;
+  color:white;
+  font-weight:bold;
+}
 
-      .outgoing {
-        background: #dcf8c6;
-        align-self: flex-end;
-      }
+.messages {
+  flex:1;
+  padding:20px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+}
 
-      .input-area {
-        display: flex;
-        padding: 10px;
-        background: #fff;
-        border-top: 1px solid #ddd;
-      }
+.message {
+  margin-bottom:10px;
+  padding:10px 14px;
+  border-radius:8px;
+  max-width:60%;
+  font-size:14px;
+  position:relative;
+}
 
-      .input-area input {
-        flex: 1;
-        padding: 10px;
-      }
+.incoming {
+  background:#fff;
+  align-self:flex-start;
+}
 
-      .input-area button {
-        padding: 10px 15px;
-        background: #25D366;
-        border: none;
-        color: white;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
+.outgoing {
+  background:#dcf8c6;
+  align-self:flex-end;
+}
 
-    <div class="sidebar" id="contacts"></div>
+.time {
+  font-size:10px;
+  color:#666;
+  margin-top:4px;
+}
 
-    <div class="chat">
-      <div class="chat-header" id="chatHeader">Select a contact</div>
-      <div class="messages" id="chatMessages"></div>
-      <div class="input-area">
-        <input type="text" id="messageInput" placeholder="Type message..." />
-        <button onclick="sendMessage()">Send</button>
-      </div>
-    </div>
+.input-area {
+  display:flex;
+  padding:10px;
+  background:#f0f0f0;
+}
 
-    <script>
-      let selectedContact = null;
-      let allMessages = [];
+.input-area input {
+  flex:1;
+  padding:10px;
+  border-radius:20px;
+  border:1px solid #ccc;
+  outline:none;
+}
 
-      async function loadMessages() {
-        const res = await fetch('/messages');
-        allMessages = await res.json();
-        renderContacts();
-        if (selectedContact) renderChat(selectedContact);
-      }
+.input-area button {
+  margin-left:10px;
+  padding:10px 20px;
+  border:none;
+  border-radius:20px;
+  background:#25D366;
+  color:white;
+  cursor:pointer;
+}
+</style>
+</head>
 
-      function renderContacts() {
-        const contactsDiv = document.getElementById("contacts");
-        const uniqueContacts = [...new Set(allMessages.map(m => m.from))];
+<body>
 
-        contactsDiv.innerHTML = uniqueContacts.map(c =>
-          '<div class="contact" onclick="selectContact(\\'' + c + '\\')">' + c + '</div>'
-        ).join("");
-      }
+<div class="sidebar">
+  <div class="sidebar-header">
+    <span>WhatsApp CRM</span>
+    <a href="/logout" style="color:white;text-decoration:none;font-size:13px;">Logout</a>
+  </div>
+  <div class="contacts" id="contacts"></div>
+</div>
 
-      function selectContact(contact) {
-        selectedContact = contact;
-        document.getElementById("chatHeader").innerText = contact;
-        renderChat(contact);
-      }
+<div class="chat">
+  <div class="chat-header" id="chatHeader">Select a contact</div>
+  <div class="messages" id="chatMessages"></div>
+  <div class="input-area">
+    <input type="text" id="messageInput" placeholder="Type a message..." />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
 
-      function renderChat(contact) {
-        const chatDiv = document.getElementById("chatMessages");
-        const msgs = allMessages.filter(m => m.from === contact);
+<script>
+let selectedContact = null;
+let allMessages = [];
 
-        chatDiv.innerHTML = msgs.map(m =>
-  '<div class="message ' + (m.type === "outgoing" ? "outgoing" : "incoming") + '">' 
-  + m.text + 
-  '</div>'
-).join("");
+async function loadMessages() {
+  const res = await fetch('/messages');
+  allMessages = await res.json();
+  renderContacts();
+  if(selectedContact) renderChat(selectedContact);
+}
 
-        chatDiv.scrollTop = chatDiv.scrollHeight;
-      }
+function renderContacts() {
+  const contactsDiv = document.getElementById("contacts");
+  const uniqueContacts = [...new Set(allMessages.map(m => m.from))];
 
-      async function sendMessage() {
-        const text = document.getElementById("messageInput").value;
-        if (!selectedContact || !text) return;
+  contactsDiv.innerHTML = uniqueContacts.map(c =>
+    '<div class="contact" onclick="selectContact(\\'' + c + '\\')">' + c + '</div>'
+  ).join("");
+}
 
-        await fetch('/send', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            to: selectedContact,
-            text: text
-          })
-        });
+function selectContact(contact) {
+  selectedContact = contact;
+  document.getElementById("chatHeader").innerText = contact;
+  renderChat(contact);
+}
 
-        document.getElementById("messageInput").value = "";
-        loadMessages();
-      }
+function renderChat(contact) {
+  const chatDiv = document.getElementById("chatMessages");
+  const msgs = allMessages.filter(m => m.from === contact);
 
-      loadMessages();
-      setInterval(loadMessages, 3000);
-    </script>
+  chatDiv.innerHTML = msgs.map(m =>
+    '<div class="message ' + (m.type === "outgoing" ? "outgoing" : "incoming") + '">' +
+      m.text +
+      '<div class="time">' + new Date(m.timestamp).toLocaleTimeString() + '</div>' +
+    '</div>'
+  ).join("");
 
-  </body>
-  </html>
+  chatDiv.scrollTop = chatDiv.scrollHeight;
+}
+
+async function sendMessage() {
+  const text = document.getElementById("messageInput").value;
+  if(!selectedContact || !text) return;
+
+  await fetch('/send', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      to:selectedContact,
+      text:text
+    })
+  });
+
+  document.getElementById("messageInput").value="";
+  loadMessages();
+}
+
+loadMessages();
+setInterval(loadMessages, 3000);
+</script>
+
+</body>
+</html>
   `);
 });
 
