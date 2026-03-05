@@ -154,24 +154,24 @@ app.get("/logout", (req, res) => {
   });
 });
 
-/* ============================= */
-/* 🔹 CRM HOME                   */
-/* ============================= */
+// /* ============================= */
+// /* 🔹 CRM HOME                   */
+// /* ============================= */
 
-app.get("/", (req, res) => {
-  if (!req.session.user) {
-    return res.redirect("/login");
-  }
+// app.get("/", (req, res) => {
+//   if (!req.session.user) {
+//     return res.redirect("/login");
+//   }
 
-  res.send(`
-  <html>
-  <body style="font-family:Arial;background:#f4f6f9;padding:20px">
-    <h2>Welcome ${req.session.user.username}</h2>
-    <a href="/logout">Logout</a>
-  </body>
-  </html>
-  `);
-});
+//   res.send(`
+//   <html>
+//   <body style="font-family:Arial;background:#f4f6f9;padding:20px">
+//     <h2>Welcome ${req.session.user.username}</h2>
+//     <a href="/logout">Logout</a>
+//   </body>
+//   </html>
+//   `);
+// });
 
 /* ============================= */
 /* 🔹 WEBHOOK VERIFY             */
