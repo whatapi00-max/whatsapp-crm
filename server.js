@@ -102,6 +102,15 @@ app.post("/send", async (req, res) => {
     );
 
     console.log("Message sent to:", to);
+
+    // 🔥 ADD THIS PART (VERY IMPORTANT)
+    messages.push({
+      from: to,
+      text: text,
+      type: "outgoing",
+      timestamp: Date.now()
+    });
+
     res.json({ success: true });
 
   } catch (error) {
@@ -109,7 +118,6 @@ app.post("/send", async (req, res) => {
     res.status(500).json({ error: error.response?.data || error.message });
   }
 });
-
 /* ============================= */
 /* 🔹 SIMPLE WEB UI              */
 /* ============================= */
@@ -245,8 +253,10 @@ app.get("/", (req, res) => {
         const msgs = allMessages.filter(m => m.from === contact);
 
         chatDiv.innerHTML = msgs.map(m =>
-          '<div class="message incoming">' + m.text + '</div>'
-        ).join("");
+  '<div class="message ' + (m.type === "outgoing" ? "outgoing" : "incoming") + '">' 
+  + m.text + 
+  '</div>'
+).join("");
 
         chatDiv.scrollTop = chatDiv.scrollHeight;
       }
