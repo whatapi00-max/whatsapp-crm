@@ -6,7 +6,10 @@ import session from "express-session";
 
 const app = express();
 app.use(bodyParser.json());
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
 app.use(session({
   secret: "crm_secret_2026",
@@ -372,7 +375,9 @@ let selectedContact = null;
 let allMessages = [];
 
 async function loadMessages() {
-  const res = await fetch('/messages');
+  const res = await fetch('/messages', {
+  credentials:'include'
+});
   allMessages = await res.json();
   renderContacts();
   if(selectedContact) renderChat(selectedContact);
@@ -413,6 +418,7 @@ async function sendMessage() {
 
   await fetch('/send', {
     method:'POST',
+    credentials:'include',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
       to:selectedContact,
