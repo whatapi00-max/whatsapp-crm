@@ -1,3 +1,4 @@
+
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
@@ -7,15 +8,53 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-/* ✅ IMPORTANT FOR RENDER */
 const PORT = process.env.PORT || 3000;
 
-/* 🔐 ENV VARIABLES (SET THESE IN RENDER) */
+/* 🔐 ENV VARIABLES */
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-let messages = [];
+/* 📱 MULTIPLE WHATSAPP NUMBERS */
+const PHONE_NUMBERS = {
+  user1: "921097607763091",
+  user2: "PHONE_ID_2",
+  user3: "PHONE_ID_3",
+  user4: "PHONE_ID_4",
+  user5: "PHONE_ID_5"
+};
+
+/* 🔐 LOGIN USERS */
+const USERS = {
+  admin1: { password: "1234", phoneKey: "user1" },
+  admin2: { password: "12345", phoneKey: "user2" },
+  admin3: { password: "123456", phoneKey: "user3" },
+  admin4: { password: "1234567", phoneKey: "user4" },
+  admin5: { password: "12345678", phoneKey: "user5" }
+};
+
+/* 📨 STORE MESSAGES PER NUMBER */
+let messages = {
+  user1: [],
+  user2: [],
+  user3: [],
+  user4: [],
+  user5: []
+};
+
+/* ============================= */
+/* 🔹 LOGIN ROUTE                */
+/* ============================= */
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+
+  const user = USERS[username];
+
+  if (!user || user.password !== password) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  res.json({ success: true, phoneKey: user.phoneKey });
+});
 
 /* ============================= */
 /* 🔹 WEBHOOK VERIFICATION       */
@@ -29,7 +68,6 @@ app.get("/webhook", (req, res) => {
     console.log("Webhook verified");
     res.status(200).send(challenge);
   } else {
-    console.log("Webhook verification failed");
     res.sendStatus(403);
   }
 });
@@ -42,25 +80,31 @@ app.post("/webhook", (req, res) => {
     const body = req.body;
 
     if (body.object) {
-      const msg = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+      const value = body.entry?.[0]?.changes?.[0]?.value;
+      const msg = value?.messages?.[0];
+      const phoneId = value?.metadata?.phone_number_id;
 
-      if (msg) {
-        const from = msg.from;
-        const text = msg.text?.body || "Non-text message";
+      if (msg && phoneId) {
 
-        messages.push({
-          from,
-          text,
-          time: new Date().toLocaleString()
-        });
+        const phoneKey = Object.keys(PHONE_NUMBERS)
+          .find(key => PHONE_NUMBERS[key] === phoneId);
 
-        console.log("Message received:", from, text);
+        if (phoneKey) {
+          messages[phoneKey].push({
+            from: msg.from,
+            text: msg.text?.body || "Non-text",
+            type: "incoming",
+            timestamp: Date.now()
+          });
+
+          console.log("Message received:", msg.from);
+        }
       }
 
       return res.sendStatus(200);
-    } else {
-      return res.sendStatus(404);
     }
+
+    res.sendStatus(404);
   } catch (err) {
     console.error("Webhook error:", err);
     res.sendStatus(500);
@@ -68,25 +112,28 @@ app.post("/webhook", (req, res) => {
 });
 
 /* ============================= */
-/* 🔹 GET ALL MESSAGES           */
+/* 🔹 GET MESSAGES               */
 /* ============================= */
-app.get("/messages", (req, res) => {
-  res.json(messages);
+app.get("/messages/:phoneKey", (req, res) => {
+  const { phoneKey } = req.params;
+  res.json(messages[phoneKey] || []);
 });
 
 /* ============================= */
-/* 🔹 SEND REPLY                 */
+/* 🔹 SEND MESSAGE               */
 /* ============================= */
 app.post("/send", async (req, res) => {
-  const { to, text } = req.body;
+  const { to, text, phoneKey } = req.body;
 
-  if (!to || !text) {
-    return res.status(400).json({ error: "Missing 'to' or 'text'" });
+  if (!to || !text || !phoneKey) {
+    return res.status(400).json({ error: "Missing fields" });
   }
+
+  const phoneId = PHONE_NUMBERS[phoneKey];
 
   try {
     await axios.post(
-      `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v19.0/${phoneId}/messages`,
       {
         messaging_product: "whatsapp",
         to,
@@ -101,12 +148,9 @@ app.post("/send", async (req, res) => {
       }
     );
 
-    console.log("Message sent to:", to);
-
-    // 🔥 ADD THIS PART (VERY IMPORTANT)
-    messages.push({
+    messages[phoneKey].push({
       from: to,
-      text: text,
+      text,
       type: "outgoing",
       timestamp: Date.now()
     });
@@ -114,10 +158,11 @@ app.post("/send", async (req, res) => {
     res.json({ success: true });
 
   } catch (error) {
-    console.error("Send error:", error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data || error.message });
+    console.error(error.response?.data || error.message);
+    res.status(500).json({ error: "Send failed" });
   }
 });
+
 /* ============================= */
 /* 🔹 SIMPLE WEB UI              */
 /* ============================= */
